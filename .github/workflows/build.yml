@@ -44,22 +44,10 @@ jobs:
       - name: Fix gcc-wrapper.py for Python 3
         run: |
           cd ~/kernel
-          python3 - <<'PY'
-          p='scripts/gcc-wrapper.py'
-          s=open(p).read()
-          s=s.replace('print >> sys.stderr, line,', 'print(line, file=sys.stderr, end=\'\')')
-          s=s.replace('print >> sys.stderr, "error, forbidden warning:", m.group(2)',
-                      'print("error, forbidden warning:", m.group(2), file=sys.stderr)')
-          s=s.replace('print >> sys.stderr, args[0] + \':\',e.strerror',
-                      'print(args[0] + \':\', e.strerror, file=sys.stderr)')
-          s=s.replace('print >> sys.stderr, \'Is your PATH set correctly?\'',
-                      'print(\'Is your PATH set correctly?\', file=sys.stderr)')
-          s=s.replace('print >> sys.stderr, \' \'.join(args), str(e)',
-                      'print(\' \'.join(args), str(e), file=sys.stderr)')
-          open(p,'w').write(s)
-          PY
-          python3 -m py_compile scripts/gcc-wrapper.py && echo "gcc-wrapper.py: Python3 OK"
-          grep -c "print >>" scripts/gcc-wrapper.py || true
+          # gcc-wrapper.py 是高通 CAF 的 Python2 包装器, 小米官方编译不需要它。
+          # 直接让 CC 指向真实 gcc, 绕开 wrapper, 避免 Python2 语法 + bytes/str 问题。
+          sed -i 's|^CC\s*=.*gcc-wrapper.py.*$|CC = $(REAL_CC)|' Makefile
+          grep -n "^CC" Makefile | head
 
       - name: Build kernel
         run: |
