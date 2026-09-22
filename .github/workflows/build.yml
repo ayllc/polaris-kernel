@@ -1,0 +1,66 @@
+name: build-polaris-kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: Install host build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libssl-dev bc \
+            python3 python3-pip cpio gzip xz-utils git wget curl
+
+      - name: Download AOSP arm64 GCC 4.9 toolchain
+        run: |
+          mkdir -p ~/toolchain
+          cd ~/toolchain
+          wget -q --no-check-certificate \
+            "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android10-release.tar.gz" \
+            -O gcc49.tar.gz
+          mkdir -p gcc49
+          tar -xzf gcc49.tar.gz -C gcc49
+          ls gcc49/bin | head
+
+      - name: Clone official Xiaomi polaris kernel source (dipper-q-oss)
+        run: |
+          cd ~
+          git clone --depth 1 -b dipper-q-oss \
+            https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel
+
+      - name: Apply gcc10+ -fcommon fix for dtc
+        run: |
+          cd ~/kernel
+          sed -i 's|HOSTCFLAGS_DTC := -I$(src) -I$(src)/libfdt|HOSTCFLAGS_DTC := -I$(src) -I$(src)/libfdt -fcommon|' scripts/dtc/Makefile
+          grep -n "HOSTCFLAGS_DTC :=" scripts/dtc/Makefile
+
+      - name: Build kernel
+        run: |
+          cd ~/kernel
+          export PATH=~/toolchain/gcc49/bin:$PATH
+          export CROSS_COMPILE=aarch64-linux-android-
+          export ARCH=arm64
+          make O=out polaris_user_defconfig
+          make O=out -j$(nproc) Image.gz-dtb
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p ~/artifacts
+          cp ~/kernel/out/arch/arm64/boot/Image.gz-dtb ~/artifacts/
+          cp ~/kernel/out/arch/arm64/boot/Image.gz ~/artifacts/ 2>/dev/null || true
+          cp ~/kernel/out/.config ~/artifacts/polaris_user.config 2>/dev/null || true
+          ls -la ~/artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-kernel-Image-gz-dtb
+          path: ~/artifacts/*
+          retention-days: 30
