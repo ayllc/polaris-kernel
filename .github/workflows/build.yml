@@ -49,6 +49,9 @@ jobs:
           # 官方树也删了 techpack/Kconfig 及 arch/arm64/Kconfig 的 source 引用
           printf 'source techpack/audio/Kconfig\n' > ~/kernel/techpack/Kconfig
           cd ~/kernel
+          # 官方树 drivers/base/regmap/Makefile 残留了 regmap-swr.o 引用,
+          # 但源码已被剥离 (现已在 techpack/audio/soc/), 删掉残留避免 No rule 错误。
+          sed -i '/CONFIG_REGMAP_SWR) += regmap-swr.o/d' drivers/base/regmap/Makefile
           python3 - <<'PY'
           p = 'arch/arm64/Kconfig'
           s = open(p).read()
