@@ -58,6 +58,17 @@ jobs:
           chmod +x scripts/setlocalversion
           cat scripts/setlocalversion
 
+      - name: Patch vermagic to accept stock vendor modules
+        run: |
+          cd ~/kernel
+          # vendor 的闭源模块 (qca_cld3_wlan.ko 等) 按原厂内核编译, 自带 modversions CRC。
+          # 我们的内核加了 docker 配置, 符号 CRC 必然不同, 模块加载报 Exec format error。
+          # 方案: 关 MODVERSIONS (跳过CRC校验), 同时在 vermagic 里保留 "modversions" 字样
+          # (same_magic 在无CRC时做整串strcmp, 必须让字符串完全一致)。
+          sed -i 's|#define MODULE_VERMAGIC_MODVERSIONS ""|#define MODULE_VERMAGIC_MODVERSIONS "modversions "|' \
+            include/linux/vermagic.h
+          grep -n "MODULE_VERMAGIC_MODVERSIONS" include/linux/vermagic.h
+
       - name: Build kernel
         run: |
           cd ~/kernel
@@ -67,6 +78,7 @@ jobs:
           make O=out polaris_user_defconfig
           ./scripts/config --file out/.config -d LOCALVERSION_AUTO
           ./scripts/config --file out/.config --set-str LOCALVERSION ""
+          ./scripts/config --file out/.config -d MODVERSIONS
           # 补齐 docker 需要的命名空间/cgroup/网络/存储内核项
           ./scripts/config --file out/.config -e USER_NS
           ./scripts/config --file out/.config -e PID_NS
