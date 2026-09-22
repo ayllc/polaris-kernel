@@ -41,6 +41,26 @@ jobs:
           sed -i 's|HOSTCFLAGS_DTC := -I$(src) -I$(src)/libfdt|HOSTCFLAGS_DTC := -I$(src) -I$(src)/libfdt -fcommon|' scripts/dtc/Makefile
           grep -n "HOSTCFLAGS_DTC :=" scripts/dtc/Makefile
 
+      - name: Fix gcc-wrapper.py for Python 3
+        run: |
+          cd ~/kernel
+          python3 - <<'PY'
+          p='scripts/gcc-wrapper.py'
+          s=open(p).read()
+          s=s.replace('print >> sys.stderr, line,', 'print(line, file=sys.stderr, end=\'\')')
+          s=s.replace('print >> sys.stderr, "error, forbidden warning:", m.group(2)',
+                      'print("error, forbidden warning:", m.group(2), file=sys.stderr)')
+          s=s.replace('print >> sys.stderr, args[0] + \':\',e.strerror',
+                      'print(args[0] + \':\', e.strerror, file=sys.stderr)')
+          s=s.replace('print >> sys.stderr, \'Is your PATH set correctly?\'',
+                      'print(\'Is your PATH set correctly?\', file=sys.stderr)')
+          s=s.replace('print >> sys.stderr, \' \'.join(args), str(e)',
+                      'print(\' \'.join(args), str(e), file=sys.stderr)')
+          open(p,'w').write(s)
+          PY
+          python3 -m py_compile scripts/gcc-wrapper.py && echo "gcc-wrapper.py: Python3 OK"
+          grep -c "print >>" scripts/gcc-wrapper.py || true
+
       - name: Build kernel
         run: |
           cd ~/kernel
