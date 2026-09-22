@@ -158,6 +158,18 @@ jobs:
           ./scripts/config --file out/.config -e SND_SOC_MSM_QDSP6V2_INTF
           ./scripts/config --file out/.config -e MSM_QDSP6_APRV2_GLINK
           ./scripts/config --file out/.config -e SND_SOC_QDSP6V2
+          # platform driver / dsp 核心 (原厂 built-in, vendor machine/codec .ko 依赖)
+          ./scripts/config --file out/.config -e SND_HWDEP_ROUTING
+          ./scripts/config --file out/.config -e MSM_QDSP6_NOTIFIER
+          ./scripts/config --file out/.config -e MSM_QDSP6_PDR
+          ./scripts/config --file out/.config -e MSM_QDSP6_SSR
+          ./scripts/config --file out/.config -e MSM_ADSP_LOADER
+          ./scripts/config --file out/.config -e MSM_AVTIMER
+          ./scripts/config --file out/.config -e SND_SOC_MSM_HOSTLESS_PCM
+          ./scripts/config --file out/.config -e SND_SOC_MSM_STUB
+          ./scripts/config --file out/.config -e SND_SOC_MSM_HDMI_CODEC_RX
+          ./scripts/config --file out/.config -e QTI_PP
+          ./scripts/config --file out/.config -e MSM_QDSP6V2_CODECS
           make O=out olddefconfig
           make O=out -j$(nproc) Image.gz-dtb
 
