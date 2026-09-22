@@ -154,7 +154,9 @@ jobs:
           ./scripts/config --file out/.config -e SOUNDWIRE
           ./scripts/config --file out/.config -e REGMAP_SWR
           ./scripts/config --file out/.config -e WCD_SPI_AC
-          ./scripts/config --file out/.config -e SOUNDWIRE_WCD_CTRL
+          # SOUNDWIRE_WCD_CTRL 是 vendor swr_wcd_ctrl.ko 的开源对应物, 必须 =n,
+          # 否则 vendor 模块加载报 "duplicate symbol swrm_wcd_notify" 导致声卡注册失败。
+          ./scripts/config --file out/.config -d SOUNDWIRE_WCD_CTRL
           ./scripts/config --file out/.config -e SND_SOC_MSM_QDSP6V2_INTF
           ./scripts/config --file out/.config -e MSM_QDSP6_APRV2_GLINK
           ./scripts/config --file out/.config -e SND_SOC_QDSP6V2
