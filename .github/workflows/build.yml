@@ -35,6 +35,30 @@ jobs:
           git clone --depth 1 -b dipper-q-oss \
             https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel
 
+      - name: Restore techpack/audio sources (stripped from official tree)
+        run: |
+          # 官方 dipper-q-oss 树把 sdm845 音频驱动源码剥离了 (techpack 只剩 stub),
+          # 导致 vendor 闭源音频模块 (snd-soc-sdm845/wsa881x/wcd-spi) 加载时
+          # Unknown symbol (swr_*/wcd_spi_*). 从完整 CAF 树 (LawRun) 移植回来。
+          cd ~
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/negrroo/LawRun_xiaomi_sdm845_CAF.git lawrun-audio
+          cd lawrun-audio
+          git sparse-checkout set techpack/audio
+          cp -r techpack/audio ~/kernel/techpack/audio
+          # 官方树也删了 techpack/Kconfig 及 arch/arm64/Kconfig 的 source 引用
+          printf 'source techpack/audio/Kconfig\n' > ~/kernel/techpack/Kconfig
+          cd ~/kernel
+          python3 - <<'PY'
+          p = 'arch/arm64/Kconfig'
+          s = open(p).read()
+          old = 'source "lib/Kconfig"\n\nconfig HWCONF_MANAGER'
+          new = 'source "lib/Kconfig"\n\nsource "techpack/Kconfig"\n\nconfig HWCONF_MANAGER'
+          assert old in s, "anchor not found"
+          open(p, 'w').write(s.replace(old, new))
+          PY
+          grep -n "techpack/Kconfig" arch/arm64/Kconfig
+
       - name: Apply gcc10+ -fcommon fix for dtc
         run: |
           cd ~/kernel
@@ -113,6 +137,12 @@ jobs:
           ./scripts/config --file out/.config -e IP_NF_TARGET_MASQUERADE
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_MULTIPORT
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_COMMENT
+          # 音频: vendor 闭源音频模块需要内核导出 swr_*/wcd_spi_* 符号
+          # (原厂内核 built-in 了 SoundWire + wcd codec 核心, 官方树被剥离)
+          ./scripts/config --file out/.config -e SOUNDWIRE
+          ./scripts/config --file out/.config -e REGMAP_SWR
+          ./scripts/config --file out/.config -e WCD_SPI_AC
+          ./scripts/config --file out/.config -e SOUNDWIRE_WCD_CTRL
           make O=out olddefconfig
           make O=out -j$(nproc) Image.gz-dtb
 
