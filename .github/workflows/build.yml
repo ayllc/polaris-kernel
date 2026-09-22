@@ -46,12 +46,14 @@ jobs:
           cd lawrun-audio
           git sparse-checkout set techpack/audio
           cp -r techpack/audio ~/kernel/techpack/audio
-          # 只编译 soc/ 子目录: vendor 闭源音频 .ko 依赖的 swr_*/wcd_spi_* 符号
-          # 都在 soc/ 里 (soundwire.c / regmap-swr.c / swr-wcd-ctrl.c / wcd-spi-ac.c)。
-          # asoc/ dsp/ ipc/ 是 vendor .ko 的开源对应物 (machine driver/codec/apr),
-          # 若 built-in 会与 vendor 模块冲突, 且 elliptic 无条件编译会引 q6afe 报 undefined reference。
+          # 编译 soc/ dsp/ ipc/ 三个子目录: vendor 闭源音频 .ko 依赖的符号分布在
+          #   soc/: swr_*/wcd_spi_* (soundwire.c / regmap-swr.c / swr-wcd-ctrl.c / wcd-spi-ac.c)
+          #   dsp/: afe_set_lpass_clk_cfg 等 q6afe 符号 (需 CONFIG_SND_SOC_MSM_QDSP6V2_INTF)
+          #   ipc/: apr 通道 (需 CONFIG_MSM_QDSP6_APRV2_GLINK)
+          # asoc/ 是 vendor .ko 的开源对应物 (machine driver/codec/elliptic), 若 built-in
+          # 会与 vendor 模块冲突, 且 elliptic 无条件编译会引 q6afe 报 undefined reference。
           cd ~/kernel/techpack/audio
-          sed -i '/obj-y += asoc\//d; /obj-y += dsp\//d; /obj-y += ipc\//d' Makefile
+          sed -i '/obj-y += asoc\//d' Makefile
           grep -n "obj-y" Makefile
           # 官方树也删了 techpack/Kconfig 及 arch/arm64/Kconfig 的 source 引用
           printf 'source techpack/audio/Kconfig\n' > ~/kernel/techpack/Kconfig
@@ -147,12 +149,14 @@ jobs:
           ./scripts/config --file out/.config -e IP_NF_TARGET_MASQUERADE
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_MULTIPORT
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_COMMENT
-          # 音频: vendor 闭源音频模块需要内核导出 swr_*/wcd_spi_* 符号
-          # (原厂内核 built-in 了 SoundWire + wcd codec 核心, 官方树被剥离)
+          # 音频: vendor 闭源音频模块需要内核导出 swr_*/wcd_spi_*/afe_* 符号
+          # (原厂内核 built-in 了 SoundWire + wcd codec 核心 + q6afe, 官方树被剥离)
           ./scripts/config --file out/.config -e SOUNDWIRE
           ./scripts/config --file out/.config -e REGMAP_SWR
           ./scripts/config --file out/.config -e WCD_SPI_AC
           ./scripts/config --file out/.config -e SOUNDWIRE_WCD_CTRL
+          ./scripts/config --file out/.config -e SND_SOC_MSM_QDSP6V2_INTF
+          ./scripts/config --file out/.config -e MSM_QDSP6_APRV2_GLINK
           make O=out olddefconfig
           make O=out -j$(nproc) Image.gz-dtb
 
