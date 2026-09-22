@@ -54,7 +54,7 @@ jobs:
           cd ~/kernel
           # setlocalversion 直接输出固定值, 彻底避开 git dirty 检测和 + 号,
           # 让 vendor 闭源模块 (wlan.ko 等) 通过 vermagic 校验。
-          printf '#!/bin/sh\necho -g10af704\n' > scripts/setlocalversion
+          printf '#!/bin/sh\necho -perf-g10af704\n' > scripts/setlocalversion
           chmod +x scripts/setlocalversion
           cat scripts/setlocalversion
 
@@ -66,7 +66,7 @@ jobs:
           export ARCH=arm64
           make O=out polaris_user_defconfig
           ./scripts/config --file out/.config -d LOCALVERSION_AUTO
-          ./scripts/config --file out/.config --set-str LOCALVERSION "-perf"
+          ./scripts/config --file out/.config --set-str LOCALVERSION ""
           # 补齐 docker 需要的命名空间/cgroup/网络/存储内核项
           ./scripts/config --file out/.config -e USER_NS
           ./scripts/config --file out/.config -e PID_NS
