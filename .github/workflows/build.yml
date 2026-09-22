@@ -46,6 +46,13 @@ jobs:
           cd lawrun-audio
           git sparse-checkout set techpack/audio
           cp -r techpack/audio ~/kernel/techpack/audio
+          # 只编译 soc/ 子目录: vendor 闭源音频 .ko 依赖的 swr_*/wcd_spi_* 符号
+          # 都在 soc/ 里 (soundwire.c / regmap-swr.c / swr-wcd-ctrl.c / wcd-spi-ac.c)。
+          # asoc/ dsp/ ipc/ 是 vendor .ko 的开源对应物 (machine driver/codec/apr),
+          # 若 built-in 会与 vendor 模块冲突, 且 elliptic 无条件编译会引 q6afe 报 undefined reference。
+          cd ~/kernel/techpack/audio
+          sed -i '/obj-y += asoc\//d; /obj-y += dsp\//d; /obj-y += ipc\//d' Makefile
+          grep -n "obj-y" Makefile
           # 官方树也删了 techpack/Kconfig 及 arch/arm64/Kconfig 的 source 引用
           printf 'source techpack/audio/Kconfig\n' > ~/kernel/techpack/Kconfig
           cd ~/kernel
