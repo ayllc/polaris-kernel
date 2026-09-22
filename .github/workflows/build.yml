@@ -87,18 +87,22 @@ jobs:
           ./scripts/config --file out/.config -e VETH
           ./scripts/config --file out/.config -e CGROUP_DEVICE
           ./scripts/config --file out/.config -e CGROUP_PIDS
-          ./scripts/config --file out/.config -e CGROUP_NET_CLASSID
-          ./scripts/config --file out/.config -e CGROUP_NET_PRIO
           ./scripts/config --file out/.config -e CGROUP_PERF
           ./scripts/config --file out/.config -e BLK_CGROUP
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_ADDRTYPE
-          ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_IPVS
-          ./scripts/config --file out/.config -e IP_VS
           ./scripts/config --file out/.config -e MACVLAN
           ./scripts/config --file out/.config -e IPVLAN
-          ./scripts/config --file out/.config -e NET_L3_MASTER_DEV
           ./scripts/config --file out/.config -e BINFMT_MISC
           ./scripts/config --file out/.config -e CHECKPOINT_RESTORE
+          # --- 以下项会改变 struct net_device / struct net 的字段布局 ---
+          # vendor 的闭源 wlan.ko 按原厂布局编译, 布局不一致会导致
+          # regulatory 数据错乱 (no reg rules) 并在加载后自行关闭。
+          # 这些项 docker 单机运行并不需要, 必须保持与原厂一致 (=n)。
+          ./scripts/config --file out/.config -d NET_L3_MASTER_DEV
+          ./scripts/config --file out/.config -d CGROUP_NET_PRIO
+          ./scripts/config --file out/.config -d CGROUP_NET_CLASSID
+          ./scripts/config --file out/.config -d IP_VS
+          ./scripts/config --file out/.config -d NETFILTER_XT_MATCH_IPVS
           # LXC 额外需要的内核项
           ./scripts/config --file out/.config -e POSIX_MQUEUE
           ./scripts/config --file out/.config -e SECCOMP
