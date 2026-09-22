@@ -56,9 +56,10 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-android-
           export ARCH=arm64
           make O=out polaris_user_defconfig
-          # 对齐原厂版本串 4.9.186-perf-g10af704, 让 vendor 的 wlan.ko 等闭源模块能通过 vermagic 校验
+          # 对齐原厂版本串 4.9.186-perf-g10af704 (去掉 -dirty 和 +, 让 vendor 的 wlan.ko 等闭源模块通过 vermagic 校验)
+          echo "-g10af704" > .scmversion
           ./scripts/config --file out/.config -d LOCALVERSION_AUTO
-          ./scripts/config --file out/.config --set-str LOCALVERSION "-perf-g10af704"
+          ./scripts/config --file out/.config --set-str LOCALVERSION "-perf"
           # 补齐 docker 需要的命名空间/cgroup/网络/存储内核项
           ./scripts/config --file out/.config -e USER_NS
           ./scripts/config --file out/.config -e PID_NS
@@ -76,6 +77,7 @@ jobs:
           ./scripts/config --file out/.config -e IP_VS
           ./scripts/config --file out/.config -e MACVLAN
           ./scripts/config --file out/.config -e IPVLAN
+          ./scripts/config --file out/.config -e NET_L3_MASTER_DEV
           ./scripts/config --file out/.config -e BINFMT_MISC
           ./scripts/config --file out/.config -e CHECKPOINT_RESTORE
           # LXC 额外需要的内核项
