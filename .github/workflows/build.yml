@@ -49,6 +49,15 @@ jobs:
           sed -i 's|^CC\s*=.*gcc-wrapper.py.*$|CC = $(REAL_CC)|' Makefile
           grep -n "^CC" Makefile | head
 
+      - name: Pin vermagic to stock g10af704
+        run: |
+          cd ~/kernel
+          # setlocalversion 直接输出固定值, 彻底避开 git dirty 检测和 + 号,
+          # 让 vendor 闭源模块 (wlan.ko 等) 通过 vermagic 校验。
+          printf '#!/bin/sh\necho -g10af704\n' > scripts/setlocalversion
+          chmod +x scripts/setlocalversion
+          cat scripts/setlocalversion
+
       - name: Build kernel
         run: |
           cd ~/kernel
@@ -56,8 +65,6 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-android-
           export ARCH=arm64
           make O=out polaris_user_defconfig
-          # 对齐原厂版本串 4.9.186-perf-g10af704 (去掉 -dirty 和 +, 让 vendor 的 wlan.ko 等闭源模块通过 vermagic 校验)
-          echo "-g10af704" > .scmversion
           ./scripts/config --file out/.config -d LOCALVERSION_AUTO
           ./scripts/config --file out/.config --set-str LOCALVERSION "-perf"
           # 补齐 docker 需要的命名空间/cgroup/网络/存储内核项
