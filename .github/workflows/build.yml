@@ -167,6 +167,61 @@ jobs:
           echo "--- 补丁结果 ---"
           grep -n -A6 "^bad_version:" kernel/module.c
 
+      - name: Enable pstore zones so a crash leaves a readable trace
+        run: |
+          cd ~/kernel
+          # 【背景】高通的 msm_reserve_ramoops_memory() 在极早期保留了 4MB (0xb0000000),
+          #   但它交给 ramoops 驱动的 record_size / ftrace_size 全是 0, console/pmsg 也是 0,
+          #   于是 pstore 注册成功却**没有任何 zone**:
+          #     ramoops: msm_reserve_ramoops_memory record_size=0,ftrace_size=0
+          #     /sys/fs/pstore/  -> total 0   (实测, 永远为空)
+          #   结果: 容器负载下系统被看门狗复位时, 内核的遗言(panic/oops/最后若干行 dmesg)
+          #   无处可存, 重启后什么都查不到 —— 这是排查卡住的最大原因。
+          # 【已排除的办法】往 boot 镜像 cmdline 里加 ramoops.record_size=... 无效:
+          #   该函数在解析这些模块参数之前就跑了 (dmesg 时间戳 0.000000, 行为不变)。
+          # 【本补丁】在驱动拿到 pdata 之后, 把仍为 0 的尺寸补上默认值。
+          #   预算: 4MB 保留区 = record 512K x2(dumps) + console 1M + pmsg 256K = 2.25MB, 不越界。
+          #   record  -> dmesg 区, panic/oops 时由 kmsg_dump 写入
+          #   console -> 控制台环形区, 硬死机(连 panic 都来不及打)时也能留下最后几行
+          # 【写法】不直接插语句(会触发 -Wdeclaration-after-statement),
+          #   而是在 ramoops_probe 之前加一个辅助函数, 用初始化器包住 pdata。
+          python3 - <<'PY'
+          import sys
+          p = 'fs/pstore/ram.c'
+          s = open(p).read()
+          helper = (
+              'static struct ramoops_platform_data *ramoops_fill_sizes(\n'
+              '\tstruct ramoops_platform_data *p)\n'
+              '{\n'
+              '\tif (p) {\n'
+              '\t\tif (!p->record_size)\n'
+              '\t\t\tp->record_size = 0x80000;\n'
+              '\t\tif (!p->console_size)\n'
+              '\t\t\tp->console_size = 0x100000;\n'
+              '\t\tif (!p->pmsg_size)\n'
+              '\t\t\tp->pmsg_size = 0x40000;\n'
+              '\t}\n'
+              '\treturn p;\n'
+              '}\n\n')
+          fn = 'static int ramoops_probe(struct platform_device *pdev)'
+          if fn not in s:
+              print('FUNC ANCHOR NOT FOUND in ' + p); sys.exit(1)
+          s = s.replace(fn, helper + fn, 1)
+          decl = 'struct ramoops_platform_data *pdata = dev->platform_data;'
+          asg = '\tpdata = dev->platform_data;'
+          if decl in s:
+              s = s.replace(decl, 'struct ramoops_platform_data *pdata = '
+                                  'ramoops_fill_sizes(dev->platform_data);', 1)
+          elif asg in s:
+              s = s.replace(asg, '\tpdata = ramoops_fill_sizes(dev->platform_data);', 1)
+          else:
+              print('PDATA ANCHOR NOT FOUND in ' + p); sys.exit(1)
+          open(p, 'w').write(s)
+          print('patched ' + p)
+          PY
+          echo "--- 补丁结果 ---"
+          grep -n -A10 "platform_data;" fs/pstore/ram.c | head -25
+
       - name: Build kernel
         run: |
           cd ~/kernel
