@@ -106,16 +106,42 @@ jobs:
           chmod +x scripts/setlocalversion
           cat scripts/setlocalversion
 
-      - name: Patch vermagic to accept stock vendor modules
+      - name: MODVERSIONS - 满足 VINTF, 同时容忍 vendor 模块 CRC 不一致
         run: |
           cd ~/kernel
-          # vendor 的闭源模块 (qca_cld3_wlan.ko 等) 按原厂内核编译, 自带 modversions CRC。
-          # 我们的内核加了 docker 配置, 符号 CRC 必然不同, 模块加载报 Exec format error。
-          # 方案: 关 MODVERSIONS (跳过CRC校验), 同时在 vermagic 里保留 "modversions" 字样
-          # (same_magic 在无CRC时做整串strcmp, 必须让字符串完全一致)。
+          # 【为什么必须开着】框架兼容性矩阵 (VINTF) 强制要求内核 CONFIG_MODVERSIONS=y。
+          #   缺它 -> VintfObject.verifyWithoutAvb() 返回 INCOMPATIBLE(1)
+          #        -> Build.isBuildConsistent() = false
+          #        -> ActivityManagerService 弹窗:
+          #           "Android 系统 / 您的设备内部出现了问题。请联系您的设备制造商了解详情。"
+          #   真实设备日志: E/Build(1884): Vendor interface is incompatible, error=1
+          #   实测设备 /system/etc/vintf/compatibility_matrix.*.xml 要求 261 项内核项,
+          #   我们唯一与原厂不同的就是这一项 (已用解出的原厂 stock.config 逐项核对)。
+          # 【为什么以前要关】vendor 闭源模块 (qca_cld3_wlan.ko 等) 按原厂内核编译,
+          #   自带原厂 CRC; 我们多了 docker 等配置 -> 符号 CRC 必然不同 ->
+          #   check_version() 返回 0 -> 模块加载报 Exec format error (WiFi 曾因此挂掉)。
+          # 【两全方案】保留 MODVERSIONS=y (满足 VINTF), 只把 CRC 不一致从
+          #   "拒绝加载" 降级为 "警告后继续加载" —— 仅改 bad_version 的返回值。
+          # vermagic 里保持 "modversions " 字样 (MODVERSIONS=y 时本就会出现)。
+          grep -n "MODULE_VERMAGIC_MODVERSIONS" include/linux/vermagic.h
           sed -i 's|#define MODULE_VERMAGIC_MODVERSIONS ""|#define MODULE_VERMAGIC_MODVERSIONS "modversions "|' \
             include/linux/vermagic.h
-          grep -n "MODULE_VERMAGIC_MODVERSIONS" include/linux/vermagic.h
+          python3 - <<'PYEOF'
+          import sys
+          p = "kernel/module.c"
+          s = open(p).read()
+          i = s.find("bad_version:")
+          if i < 0:
+              print("bad_version: 未找到"); sys.exit(1)
+          j = s.find("return 0;", i)
+          if j < 0:
+              print("bad_version 后的 return 0; 未找到"); sys.exit(1)
+          s = s[:j] + "return 1;  /* relaxed: allow vendor modules with stock CRCs */" + s[j + len("return 0;"):]
+          open(p, "w").write(s)
+          print("module.c: CRC 不一致已放宽 (offset %d)" % j)
+          PYEOF
+          echo "--- 补丁结果 ---"
+          grep -n -A6 "^bad_version:" kernel/module.c
 
       - name: Build kernel
         run: |
@@ -126,7 +152,9 @@ jobs:
           make O=out polaris_user_defconfig
           ./scripts/config --file out/.config -d LOCALVERSION_AUTO
           ./scripts/config --file out/.config --set-str LOCALVERSION ""
-          ./scripts/config --file out/.config -d MODVERSIONS
+          # MODVERSIONS 必须 =y (VINTF 框架兼容性矩阵强制要求, 缺它开机弹
+          # "您的设备内部出现了问题")。vendor 模块的 CRC 容忍由上面 module.c 补丁解决。
+          ./scripts/config --file out/.config -e MODVERSIONS
           # 补齐 docker 需要的命名空间/cgroup/网络/存储内核项
           ./scripts/config --file out/.config -e USER_NS
           ./scripts/config --file out/.config -e PID_NS
