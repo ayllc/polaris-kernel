@@ -170,6 +170,13 @@ jobs:
           ./scripts/config --file out/.config -e IPVLAN
           ./scripts/config --file out/.config -e BINFMT_MISC
           ./scripts/config --file out/.config -e CHECKPOINT_RESTORE
+          # devtmpfs: 容器 App 的"硬件访问模式"要求内核注册 devtmpfs 文件系统。
+          # 小米原厂内核也是关的 (Android 习惯用 tmpfs + ueventd 管 /dev),
+          # 所以原厂内核跑这个 App 同样会报 devtmpfs ✗。
+          # MOUNT 必须保持 =n: 内核就不会自动挂载, Android 的 /dev 管理方式完全不变,
+          # 只是把 devtmpfs 注册进来供 App 自己挂载。
+          ./scripts/config --file out/.config -e DEVTMPFS
+          ./scripts/config --file out/.config -d DEVTMPFS_MOUNT
           # --- 以下项会改变 struct net_device / struct net 的字段布局 ---
           # vendor 的闭源 wlan.ko 按原厂布局编译, 布局不一致会导致
           # regulatory 数据错乱 (no reg rules) 并在加载后自行关闭。
