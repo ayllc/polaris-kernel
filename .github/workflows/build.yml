@@ -169,6 +169,16 @@ jobs:
           # SOUNDWIRE_WCD_CTRL 是 vendor swr_wcd_ctrl.ko 的开源对应物, 必须 =n,
           # 否则 vendor 模块加载报 "duplicate symbol swrm_wcd_notify" 导致声卡注册失败。
           ./scripts/config --file out/.config -d SOUNDWIRE_WCD_CTRL
+          # TAS2559: MIX 2S(polaris) 的 machine driver (techpack/audio/asoc/sdm845.c)
+          # 在 get_hw_version_platform()==HARDWARE_PLATFORM_POLARIS 时会无条件加入
+          # "tas2559 ASI1" 这条 DAI link (msm_quat_mi2s_tas2559_dai_links, 无 #ifdef 保护)。
+          # 原厂内核把该 codec built-in (原厂 Image 里有 snd_soc_tas2559 /
+          # techpack/audio/asoc/codecs/tas2559/tas2559-core.c 等字符串), 而官方
+          # dipper-q-oss 树把源码剥离了 -> DAI 未注册 -> snd_soc_register_card 直接失败
+          # -> /dev/snd 只剩 timer -> 无声, 且视频因缺音频时钟被拖成加速播放。
+          # 真实日志证据:
+          #   sdm845-asoc-snd ...:sound-tavil: ASoC: CODEC DAI tas2559 ASI1 not registered
+          ./scripts/config --file out/.config -e SND_SOC_TAS2559
           ./scripts/config --file out/.config -e SND_SOC_MSM_QDSP6V2_INTF
           ./scripts/config --file out/.config -e MSM_QDSP6_APRV2_GLINK
           ./scripts/config --file out/.config -e SND_SOC_QDSP6V2
