@@ -71,6 +71,17 @@ jobs:
           PY
           grep -n "techpack/Kconfig" arch/arm64/Kconfig
 
+      - name: Patch apr.c for ADSP-up fallback populate
+        run: |
+          cd ~/kernel
+          # vendor 音频模块加载成功却 refcount=0 / 声卡不注册:
+          # apr 只在收到 ADSP-up(PDR) 事件后才 of_platform_populate() 建子设备,
+          # 事件链失效则 sound-tavil 等设备永不出现, vendor machine driver 无设备可绑。
+          # 本补丁加 20s 兜底 populate + 诊断日志。
+          python3 "$GITHUB_WORKSPACE/patches/patch_apr.py" techpack/audio/ipc/apr.c
+          echo "--- 补丁结果 ---"
+          grep -n "apr_fallback_populate\|Q6 is Up\|populating child devices" techpack/audio/ipc/apr.c
+
       - name: Apply gcc10+ -fcommon fix for dtc
         run: |
           cd ~/kernel
