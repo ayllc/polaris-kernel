@@ -164,7 +164,15 @@ jobs:
           ./scripts/config --file out/.config -e CGROUP_DEVICE
           ./scripts/config --file out/.config -e CGROUP_PIDS
           ./scripts/config --file out/.config -e CGROUP_PERF
-          ./scripts/config --file out/.config -e BLK_CGROUP
+          # blkio cgroup: 小米原厂是 n。开启它会在 Kconfig 里连带打开
+          #   CONFIG_CGROUP_WRITEBACK (default y, 无 prompt, 无法单独关闭),
+          # 从而把脏页回写从"全局回写"改成"按 cgroup 分别回写"。
+          # 容器通过 loop 设备读写 rootfs 镜像时, 脏页记在容器 cgroup 上, 回写路径却要
+          # 穿过 loop -> 宿主 f2fs -> UFS, 实测会把回写堵死 (kswapd0 卡在
+          # jbd2_log_wait_commit 1520ms, I/O 延迟从 310ms 一路涨到 1300ms),
+          # 最终系统被看门狗复位。故与原厂保持一致, 关掉。
+          # 代价: 容器失去 blkio I/O 限速能力 (Docker 只 warning, 不影响运行)。
+          ./scripts/config --file out/.config -d BLK_CGROUP
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_ADDRTYPE
           ./scripts/config --file out/.config -e MACVLAN
           ./scripts/config --file out/.config -e IPVLAN
