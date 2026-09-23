@@ -97,6 +97,30 @@ jobs:
           sed -i 's|^CC\s*=.*gcc-wrapper.py.*$|CC = $(REAL_CC)|' Makefile
           grep -n "^CC" Makefile | head
 
+      - name: Disable cgroup writeback (keep blkio cgroup)
+        run: |
+          cd ~/kernel
+          # CONFIG_CGROUP_WRITEBACK 在 Kconfig 里是 "default y" 且无 prompt:
+          # 只要 BLK_CGROUP=y 就一定会被打开, 无法单独关闭。
+          # 它把脏页回写从"全局回写"改成"按 cgroup 分别回写"。容器通过 loop 设备读写
+          # rootfs 镜像时, 脏页记在容器 cgroup 上, 而回写路径要穿过
+          # loop -> 宿主 f2fs -> UFS, 实测造成回写堵死:
+          #   kswapd0 卡在 jbd2_log_wait_commit 1520ms,
+          #   I/O 延迟从 310ms 一路涨到 1300ms, 最终系统被看门狗复位 (无 kernel panic)。
+          # 这里改 Kconfig: 去掉对 BLK_CGROUP 的依赖并把默认值改成 n。
+          # 这样容器要的 blkio cgroup 仍然在, 而回写行为回到原厂
+          # (原厂 BLK_CGROUP/CGROUP_WRITEBACK 两个都是关的)。
+          python3 - <<'PY'
+          p = 'init/Kconfig'
+          s = open(p).read()
+          old = 'config CGROUP_WRITEBACK\n\tbool\n\tdepends on MEMCG && BLK_CGROUP\n\tdefault y\n'
+          new = 'config CGROUP_WRITEBACK\n\tbool\n\tdefault n\n'
+          assert old in s, 'CGROUP_WRITEBACK anchor not found'
+          open(p, 'w').write(s.replace(old, new))
+          print('patched init/Kconfig')
+          PY
+          grep -A3 "^config CGROUP_WRITEBACK" init/Kconfig
+
       - name: Pin vermagic to stock g10af704
         run: |
           cd ~/kernel
@@ -164,15 +188,11 @@ jobs:
           ./scripts/config --file out/.config -e CGROUP_DEVICE
           ./scripts/config --file out/.config -e CGROUP_PIDS
           ./scripts/config --file out/.config -e CGROUP_PERF
-          # blkio cgroup: 小米原厂是 n。开启它会在 Kconfig 里连带打开
-          #   CONFIG_CGROUP_WRITEBACK (default y, 无 prompt, 无法单独关闭),
-          # 从而把脏页回写从"全局回写"改成"按 cgroup 分别回写"。
-          # 容器通过 loop 设备读写 rootfs 镜像时, 脏页记在容器 cgroup 上, 回写路径却要
-          # 穿过 loop -> 宿主 f2fs -> UFS, 实测会把回写堵死 (kswapd0 卡在
-          # jbd2_log_wait_commit 1520ms, I/O 延迟从 310ms 一路涨到 1300ms),
-          # 最终系统被看门狗复位。故与原厂保持一致, 关掉。
-          # 代价: 容器失去 blkio I/O 限速能力 (Docker 只 warning, 不影响运行)。
-          ./scripts/config --file out/.config -d BLK_CGROUP
+          # blkio cgroup: 容器检查表要它, 保留 =y。
+          # 但注意它会连带打开 CONFIG_CGROUP_WRITEBACK (Kconfig 里 default y 且无 prompt),
+          # 而"按 cgroup 分别回写"正是容器 loop 镜像回写堵死的嫌疑 —— 见下面
+          # "Disable cgroup writeback" 步骤 (在那里改 Kconfig 单独把它关掉)。
+          ./scripts/config --file out/.config -e BLK_CGROUP
           ./scripts/config --file out/.config -e NETFILTER_XT_MATCH_ADDRTYPE
           ./scripts/config --file out/.config -e MACVLAN
           ./scripts/config --file out/.config -e IPVLAN
