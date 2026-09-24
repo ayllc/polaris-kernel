@@ -191,6 +191,54 @@ jobs:
           PY
           grep -n "watchdog_thresh = " kernel/watchdog.c
 
+      - name: Fix vendor uevents_records bug on netns create/destroy
+        run: |
+          cd ~/kernel
+          # 【为什么改】小米在 lib/kobject_uevent.c 里加的 CONFIG_UEVENTS_RECORD 有 bug:
+          #     uevent_net_init() 每个 netns 都 proc_create("uevents_records", ...)
+          #     uevent_net_exit() 每个 netns 都 remove_proc_entry("uevents_records", NULL)
+          #   而 "/proc/uevents_records" 是全局唯一的名字, 于是:
+          #     * 容器一建网络命名空间就重复注册 -> WARNING at ../fs/proc/generic.c:345
+          #     * 容器一拆网络命名空间就把全局条目删掉, 建/删互相踩 -> proc 目录簿记被搞脏
+          #   实测: 三次死机全部发生在容器的网络命名空间建立/销毁的时刻;
+          #         每次开机都会打出 3 条上述 WARNING。原厂不允许跑容器, 所以永远碰不到。
+          # 【本步骤】把注册/注销限定到初始 netns, 只发生一次。
+          #   顺手修同一文件里的无界 sprintf(写进 250 字节缓冲区) -> snprintf。
+          python3 - <<'PY'
+          import re, sys
+          p = 'lib/kobject_uevent.c'
+          s = open(p).read()
+          orig = s
+
+          def sub1(pat, rep, what):
+              global s
+              s2, n = re.subn(pat, rep, s, count=1)
+              if n != 1:
+                  print('ANCHOR NOT FOUND: ' + what)
+                  sys.exit(1)
+              s = s2
+
+          # 1) 注册: 只在初始 netns 建一次 (否则每个容器 netns 都重复注册)
+          sub1(r'\n([ \t]*)entry = proc_create\("uevents_records", 0, NULL, &uevents_records_fileops\);\n[ \t]*if \(!entry\)\n[ \t]*printk\(KERN_ERR\n[ \t]*"kobject_uevent: unable to create uevents_records!\\n"\);',
+               r'\n\1if (net_eq(net, &init_net)) {\n\1\tentry = proc_create("uevents_records", 0, NULL, &uevents_records_fileops);\n\1\tif (!entry)\n\1\t\tprintk(KERN_ERR\n\1\t\t       "kobject_uevent: unable to create uevents_records!\\n");\n\1}',
+               'proc_create in uevent_net_init')
+
+          # 2) 注销: 同样只在初始 netns (否则容器拆网络时会把全局条目删掉)
+          sub1(r'\n([ \t]*)remove_proc_entry\("uevents_records", NULL\);',
+               r'\n\1if (net_eq(net, &init_net))\n\1\tremove_proc_entry("uevents_records", NULL);',
+               'remove_proc_entry in uevent_net_exit')
+
+          # 3) 无界 sprintf 写进 250 字节缓冲区 -> snprintf
+          sub1(r'\n([ \t]*)sprintf\(uevents_buff\[m\+\+\]\.event_msg, "%s, %s, %s, %s", uevent\.action, uevent\.path, uevent\.subsystem, uevent\.device_name\);',
+               r'\n\1snprintf(uevents_buff[m].event_msg, sizeof(uevents_buff[m].event_msg),\n\1\t "%s, %s, %s, %s", uevent.action, uevent.path,\n\1\t uevent.subsystem, uevent.device_name);\n\1m++;',
+               'unbounded sprintf')
+
+          open(p, 'w').write(s)
+          print('patched ' + p + '  (%d -> %d bytes)' % (len(orig), len(s)))
+          PY
+          grep -q "net_eq(net, &init_net)" lib/kobject_uevent.c || { echo "PATCH NOT APPLIED"; exit 1; }
+          grep -n "net_eq(net, &init_net)\|snprintf(uevents_buff" lib/kobject_uevent.c
+
       - name: Build kernel
         run: |
           cd ~/kernel
